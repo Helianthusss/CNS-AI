@@ -48,6 +48,9 @@ label.f{font-size:14px;color:var(--mut)}input[type=number],select{font:inherit;p
 table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}
 .rv{border-left:4px solid var(--line);padding-left:12px;margin:14px 0}.rv.ok{border-color:var(--ok)}.rv.bad{border-color:var(--bad)}
 .hide{display:none!important}
+.reco{border-color:#bcd0f7;background:linear-gradient(180deg,#f3f7ff,#fff)}
+.rtop{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:16px}
+.rl{margin:0 0 12px;padding-left:20px;color:var(--ink);font-size:15px}.rl li{margin:2px 0}
 .login{max-width:460px;margin:26px auto 8px;padding:26px 24px;border-radius:16px;box-shadow:0 10px 30px rgba(36,87,214,.10)}
 .login .logo{width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,#2457d6,#5b8def);color:#fff;display:grid;place-items:center;font-size:26px;margin:0 auto 12px}
 .login h2{text-align:center;font-size:21px;margin-bottom:4px}
@@ -144,7 +147,7 @@ const REQUIRE_LOGIN=true;
 const L=["A","B","C","D","E","F"];
 function load(){try{return JSON.parse(localStorage.getItem(LS))||{}}catch(e){return {}}}
 function save(){try{localStorage.setItem(LS,JSON.stringify(store))}catch(e){}}
-let store=load(); store.wrong=store.wrong||{}; store.stat=store.stat||{}; store.hist=store.hist||[];
+let store=load(); store.wrong=store.wrong||{}; store.stat=store.stat||{}; store.hist=store.hist||[]; store.q=store.q||{};
 
 // ---- build question pool ----
 const ALL=[];
@@ -160,7 +163,69 @@ function prep(q){
   return {id:q.id,ch:q.ch,q:q.q,opts:idx.map(i=>q.o[i]),ans:idx.indexOf(q.a),e:q.e,pick:null};
 }
 
-let sel=new Set(CH), mode="learn", S=null, chOpen=window.innerWidth>=640;
+
+// ---------- LUYỆN THÔNG MINH (thích ứng) ----------
+// Mỗi câu có "hộp" b từ 0 đến 4 (kiểu Leitner): đúng thì lên hộp, sai thì về hộp 0.
+// Hộp càng cao thì càng lâu mới phải ôn lại. Hộp >= 3 được coi là "thành thạo".
+const BOX_MS=[0,10*60e3,864e5,3*864e5,7*864e5];
+const isMastered=id=>{const x=store.q[id];return !!x&&x.b>=3};
+const masteredCount=chs=>ALL.filter(q=>(!chs||chs.has(q.ch))&&isMastered(q.id)).length;
+function chAcc(c){const s=store.stat[c];return s&&s.t>=5?s.r/s.t:null}
+function weight(q,now){
+  const x=store.q[q.id];let w;
+  if(!x)w=3;                                  // chưa làm: ưu tiên vừa phải
+  else if(x.b>=3&&now<x.due)w=.15;            // đã thành thạo, chưa đến hạn: gần như bỏ qua
+  else if(now>=x.due)w=x.b===0?9:4;           // vừa sai hoặc đến hạn ôn lại: ưu tiên cao nhất
+  else w=.5;                                  // đang học, chưa đến hạn
+  if(x&&now-x.last<3*60e3)w*=.1;              // vừa làm xong: tránh lặp lại ngay
+  const a=chAcc(q.ch);w*=a===null?1.3:1+(1-a);// chủ đề càng yếu càng được chọn nhiều
+  return w;
+}
+function wsample(arr,k){
+  const items=arr.slice(),out=[];
+  for(let j=0;j<k&&items.length;j++){
+    const tot=items.reduce((s,i)=>s+i.w,0);let r=Math.random()*tot,idx=0;
+    for(;idx<items.length-1;idx++){r-=items[idx].w;if(r<=0)break}
+    out.push(items.splice(idx,1)[0]);
+  }
+  return out;
+}
+// Chia suất để câu cần ôn không bị câu mới lấn át: ~50% câu đến hạn ôn, ~35% câu chưa làm, phần còn lại lấy theo trọng số.
+function smartPick(pool,n){
+  const now=Date.now(),due=[],fresh=[],rest=[];
+  pool.forEach(q=>{
+    const x=store.q[q.id],it={q,w:weight(q,now)+Math.random()*.01};
+    (!x?fresh:now>=x.due?due:rest).push(it);
+  });
+  n=Math.min(n,pool.length);
+  const pd=wsample(due,Math.min(due.length,Math.ceil(n*.5)));
+  const pf=wsample(fresh,Math.min(fresh.length,Math.ceil(n*.35)));
+  const used=new Set([...pd,...pf]);
+  const left=[...due,...fresh,...rest].filter(i=>!used.has(i));
+  const pr=wsample(left,n-pd.length-pf.length);
+  return shuffle([...pd,...pf,...pr].map(i=>i.q));
+}
+function reco(){
+  const tot=ALL.length,m=masteredCount(),now=Date.now();
+  const seen=ALL.filter(q=>store.q[q.id]).length;
+  const due=ALL.filter(q=>store.q[q.id]&&store.q[q.id].due<=now).length;
+  let weak=null,wa=2;
+  CH.forEach(c=>{const a=chAcc(c);if(a!==null&&a<.75&&a<wa){wa=a;weak=c}});
+  const lines=[];
+  if(!seen)lines.push("Bạn chưa làm câu nào. Bắt đầu với 20 câu để hệ thống hiểu mức độ của bạn.");
+  else{
+    lines.push(`Đã gặp <b>${seen}</b>/${tot} câu, thành thạo <b>${m}</b> câu.`);
+    if(due)lines.push(`Có <b>${due}</b> câu đến hạn ôn lại.`);
+    if(weak)lines.push(`Chủ đề yếu nhất: <b>${esc(window.BANK[weak].title.split(" – ")[0])}</b> (đúng ${Math.round(100*wa)}%).`);
+    else if(seen>=20)lines.push("Chưa thấy chủ đề nào yếu rõ rệt. Cứ tiếp tục luyện để củng cố.");
+  }
+  return `<div class="card reco"><div class="rtop"><b>🎯 Gợi ý cho bạn</b><span class="badge">Thành thạo ${m}/${tot}</span></div>
+    <div class="bar" style="margin:8px 0 10px"><i style="width:${(100*m/tot).toFixed(1)}%;background:var(--ok)"></i></div>
+    <ul class="rl">${lines.map(l=>`<li>${l}</li>`).join("")}</ul>
+    <div class="row"><button class="btn" id="qs">Luyện thông minh 20 câu</button>${weak?`<button class="btn sec" id="qw">Ôn chủ đề yếu nhất</button>`:""}</div></div>`;
+}
+
+let sel=new Set(CH), mode="smart", S=null, chOpen=window.innerWidth>=640;
 
 // ---------- ĐĂNG NHẬP & GHI KẾT QUẢ ----------
 store.outbox=store.outbox||[];
@@ -212,6 +277,7 @@ function home(){
   const wrongN=Object.keys(store.wrong).filter(id=>ALL.some(q=>q.id===id)).length;
   app.innerHTML=`
   ${store.user?`<div class="ubar"><div class="who"><b>${esc(store.user.name)}</b><small>${esc(store.user.mssv)} • ${esc(store.user.cls)}</small></div><button class="btn gh" id="logout">Đăng xuất</button></div>`:""}
+  ${reco()}
   <div class="card">
     <details id="chdet" ${chOpen?"open":""}>
     <summary><span>1. Chọn chủ đề</span><span class="badge" id="cnt2"></span></summary>
@@ -224,13 +290,14 @@ function home(){
       const b=window.BANK[c],st=store.stat[c]||{r:0,t:0};
       return `<label class="chap"><input type="checkbox" data-c="${c}" ${sel.has(c)?"checked":""}>
       <div><b>${esc(b.title)}</b><small>${b.qs.length} câu • ${b.domain}</small>
-      <div class="st">${st.t?`Đã làm ${st.t} câu • đúng ${Math.round(100*st.r/st.t)}%`:"Chưa làm"}</div></div></label>`}).join("")}
+      <div class="st">${st.t?`Đã làm ${st.t} câu • đúng ${Math.round(100*st.r/st.t)}% • thành thạo ${masteredCount(new Set([c]))}/${b.qs.length}`:"Chưa làm"}</div></div></label>`}).join("")}
     </div>
     </details>
   </div>
   <div class="card">
     <h2>2. Chọn chế độ</h2>
     <div class="modes">
+      <div class="mode ${mode==="smart"?"on":""}" data-m="smart"><b>🎯 Luyện thông minh</b><span>Ưu tiên câu hay sai, câu chưa làm và câu đến hạn ôn lại; tự điều chỉnh theo kết quả của bạn.</span></div>
       <div class="mode ${mode==="learn"?"on":""}" data-m="learn"><b>📘 Ôn luyện</b><span>Chọn đáp án là biết đúng/sai ngay, có giải thích.</span></div>
       <div class="mode ${mode==="exam"?"on":""}" data-m="exam"><b>📝 Thi thử</b><span>Giống thi thật: tính giờ, chấm điểm cuối bài, xem lại câu sai.</span></div>
       <div class="mode ${mode==="wrong"?"on":""}" data-m="wrong"><b>🔁 Ôn câu sai (${wrongN})</b><span>Luyện lại các câu bạn từng làm sai.</span></div>
@@ -255,8 +322,10 @@ function home(){
   app.querySelectorAll(".mode").forEach(m=>m.onclick=()=>{mode=m.dataset.m;home()});
   if($("#rst"))$("#rst").onclick=function(){
     if(!this.dataset.sure){this.dataset.sure=1;this.textContent="Bấm lại để xác nhận xóa";return}
-    store={wrong:{},stat:{},hist:[],n:store.n,tm:store.tm,user:store.user,outbox:store.outbox};save();home()};
+    store={wrong:{},stat:{},hist:[],q:{},n:store.n,tm:store.tm,user:store.user,outbox:store.outbox};save();home()};
   $("#go").onclick=()=>start();
+  if($("#qs"))$("#qs").onclick=()=>{mode="smart";sel=new Set(CH);$("#n").value=20;start()};
+  if($("#qw"))$("#qw").onclick=()=>{let w=null,wa=2;CH.forEach(c=>{const a=chAcc(c);if(a!==null&&a<.75&&a<wa){wa=a;w=c}});mode="smart";sel=new Set([w]);$("#n").value=20;start()};
   $("#chdet").addEventListener("toggle",e=>{chOpen=e.target.open});
   if($("#logout"))$("#logout").onclick=()=>{delete store.user;save();login()};
   upd();
@@ -269,8 +338,8 @@ function start(){
   const nEl=$("#n"),tEl=$("#tm");
   if(nEl)store.n=+nEl.value||40; if(tEl)store.tm=+tEl.value||45;
   let n=Math.max(1,Math.min(store.n||40,pool.length)); save();
-  const qs=shuffle(pool).slice(0,n).map(prep);
-  S={mode,qs,i:0,done:false,t0:Date.now(),limit:mode==="exam"?(store.tm||45)*60:0,left:0,timer:null};
+  const qs=(mode==="smart"?smartPick(pool,n):shuffle(pool).slice(0,n)).map(prep);
+  S={mode,qs,m0:masteredCount(),i:0,done:false,t0:Date.now(),limit:mode==="exam"?(store.tm||45)*60:0,left:0,timer:null};
   if(S.limit){S.left=S.limit;S.timer=setInterval(tick,1000)}
   render();
 }
@@ -284,8 +353,11 @@ const fmt=s=>{s=Math.max(0,s);return String(Math.floor(s/60)).padStart(2,"0")+":
 // ---------- QUESTION ----------
 function record(q){
   const c=q.ch;store.stat[c]=store.stat[c]||{r:0,t:0};store.stat[c].t++;
-  if(q.pick===q.ans){store.stat[c].r++;if(store.wrong[q.id]&&S.mode==="wrong")delete store.wrong[q.id]}
-  else store.wrong[q.id]=1;
+  const now=Date.now(),x=store.q[q.id]||(store.q[q.id]={n:0,c:0,b:0,last:0,due:0});
+  x.n++;x.last=now;
+  if(q.pick===q.ans){store.stat[c].r++;x.c++;x.b=Math.min(4,x.b+1);if(x.b>=2)delete store.wrong[q.id]}
+  else{x.b=0;store.wrong[q.id]=1}
+  x.due=now+BOX_MS[x.b];
 }
 function render(){
   const q=S.qs[S.i],n=S.qs.length,exam=S.mode==="exam";
@@ -352,6 +424,7 @@ function finish(timeout){
     <div class="score ${pass?"pass":"fail"}">${sc}/10</div>
     <div>${ok}/${n} câu đúng${sk?` • ${sk} câu bỏ trống`:""} • thời gian ${fmt(secs)}</div>
     <div style="margin-top:6px;color:var(--mut)">${ok/n>=.9?"Xuất sắc! Bạn nắm rất chắc.":ok/n>=.7?"Tốt! Xem lại các câu sai để chắc hơn.":ok/n>=.5?"Tạm ổn, cần ôn lại các chủ đề yếu bên dưới.":"Cần ôn lại kỹ hơn — hãy xem giải thích từng câu sai."}</div>
+    ${S.mode!=="exam"?`<div style="margin-top:8px;font-weight:600;color:var(--ok)">${masteredCount()-S.m0>0?`🌱 Bạn vừa thành thạo thêm ${masteredCount()-S.m0} câu. `:""}Tổng thành thạo: ${masteredCount()}/${ALL.length} câu</div>`:""}
     <div class="row" style="justify-content:center;margin-top:14px">
       <button class="btn" id="home">Về trang chủ</button>
       <button class="btn sec" id="again">Làm lại</button>
