@@ -47,7 +47,7 @@ label.f{font-size:14px;color:var(--mut)}input[type=number],select{font:inherit;p
 .timer{font-weight:700;font-variant-numeric:tabular-nums}.timer.low{color:var(--bad)}
 table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left}
 .rv{border-left:4px solid var(--line);padding-left:12px;margin:14px 0}.rv.ok{border-color:var(--ok)}.rv.bad{border-color:var(--bad)}
-.hide{display:none}
+.hide{display:none!important}
 .login{max-width:460px;margin:26px auto 8px;padding:26px 24px;border-radius:16px;box-shadow:0 10px 30px rgba(36,87,214,.10)}
 .login .logo{width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,#2457d6,#5b8def);color:#fff;display:grid;place-items:center;font-size:26px;margin:0 auto 12px}
 .login h2{text-align:center;font-size:21px;margin-bottom:4px}
@@ -64,7 +64,44 @@ table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:7px 8px;b
 .err{background:var(--badbg);border:1px solid #f3b7bd;color:var(--bad);border-radius:10px;padding:9px 12px;margin-bottom:14px;font-size:14px}
 .lnote{text-align:center;color:var(--mut);font-size:12.5px;margin-top:12px}
 footer{text-align:center;color:var(--mut);font-size:13px;padding:14px}
-@media(max-width:520px){.q{font-size:17px}.score{font-size:34px}}
+
+.ubar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ubar .who{flex:1;min-width:0;line-height:1.25}
+.ubar .who b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ubar .who small{color:var(--mut);font-size:13px}
+.ubar .btn{padding:7px 12px;flex:none}
+details>summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:18px;font-weight:700}
+details>summary::-webkit-details-marker{display:none}
+details>summary::after{content:"▾";color:var(--mut);font-size:16px;margin-left:4px}
+details[open]>summary::after{content:"▴"}
+.badge{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--pri);background:var(--pri2);padding:3px 9px;border-radius:20px}
+@media(max-width:520px){
+  header{padding:12px 14px}header h1{font-size:17px;line-height:1.3}
+  main{padding:10px}
+  .card{padding:14px;border-radius:12px;margin-bottom:10px}
+  .grid{grid-template-columns:1fr;gap:6px}
+  .chap{padding:8px 10px}.chap b{font-size:14px}
+  #cnt{display:none}
+  .btn{min-height:44px}
+  .ubar .btn{min-height:38px}
+  .row>.btn{flex:1}
+  .modes{grid-template-columns:1fr}
+  .row label.f{flex:1 1 100%;display:flex;justify-content:space-between;align-items:center}
+  input[type=number]{width:100px;font-size:16px;padding:8px}
+  #go{flex:1 1 100%}
+  .q{font-size:17px}
+  .opt{padding:12px;font-size:15.5px}
+  .nav{display:grid;grid-template-columns:1fr 1fr}
+  .nav .sp{display:none}
+  .nav #end{grid-column:1/-1}
+  .map button{width:36px;height:36px}
+  .qtop{flex-wrap:wrap}
+  td,th{padding:6px 4px;font-size:13px}
+  .score{font-size:34px}
+  table td[style*="width:90px"],table td[style*="width:110px"]{width:auto!important}
+  footer{padding:10px 14px 24px}
+}
+
 </style>
 </head>
 <body>
@@ -123,7 +160,7 @@ function prep(q){
   return {id:q.id,ch:q.ch,q:q.q,opts:idx.map(i=>q.o[i]),ans:idx.indexOf(q.a),e:q.e,pick:null};
 }
 
-let sel=new Set(CH), mode="learn", S=null;
+let sel=new Set(CH), mode="learn", S=null, chOpen=window.innerWidth>=640;
 
 // ---------- ĐĂNG NHẬP & GHI KẾT QUẢ ----------
 store.outbox=store.outbox||[];
@@ -174,10 +211,11 @@ function login(msg){
 function home(){
   const wrongN=Object.keys(store.wrong).filter(id=>ALL.some(q=>q.id===id)).length;
   app.innerHTML=`
-  ${store.user?`<div class="row" style="margin-bottom:10px;color:var(--mut);font-size:14px">👤 <b style="color:var(--ink)">${esc(store.user.name)}</b> • ${esc(store.user.mssv)} • ${esc(store.user.cls)}<span class="sp"></span><button class="btn gh" id="logout" style="padding:5px 10px">Đăng xuất</button></div>`:""}
+  ${store.user?`<div class="ubar"><div class="who"><b>${esc(store.user.name)}</b><small>${esc(store.user.mssv)} • ${esc(store.user.cls)}</small></div><button class="btn gh" id="logout">Đăng xuất</button></div>`:""}
   <div class="card">
-    <h2>1. Chọn chủ đề</h2>
-    <div class="row" style="margin-bottom:10px">
+    <details id="chdet" ${chOpen?"open":""}>
+    <summary><span>1. Chọn chủ đề</span><span class="badge" id="cnt2"></span></summary>
+    <div class="row" style="margin:10px 0">
       <button class="btn sec" id="all">Chọn tất cả</button>
       <button class="btn gh" id="none">Bỏ chọn</button>
       <span class="sp"></span><span id="cnt" style="color:var(--mut)"></span>
@@ -188,6 +226,7 @@ function home(){
       <div><b>${esc(b.title)}</b><small>${b.qs.length} câu • ${b.domain}</small>
       <div class="st">${st.t?`Đã làm ${st.t} câu • đúng ${Math.round(100*st.r/st.t)}%`:"Chưa làm"}</div></div></label>`}).join("")}
     </div>
+    </details>
   </div>
   <div class="card">
     <h2>2. Chọn chế độ</h2>
@@ -206,7 +245,8 @@ function home(){
   ${store.hist.length?`<div class="card"><h3>Lịch sử thi thử gần đây</h3><table><tr><th>Ngày</th><th>Số câu</th><th>Điểm</th></tr>${store.hist.slice(-6).reverse().map(h=>`<tr><td>${h.d}</td><td>${h.ok}/${h.n}</td><td><b>${h.sc}</b>/10</td></tr>`).join("")}</table><div style="margin-top:8px"><button class="btn gh" id="rst">Xóa dữ liệu ôn tập</button></div></div>`:""}`;
   const upd=()=>{
     let n=ALL.filter(q=>sel.has(q.ch)).length; if(mode==="wrong")n=ALL.filter(q=>store.wrong[q.id]&&sel.has(q.ch)).length;
-    $("#cnt").textContent=`${sel.size} chủ đề • ${n} câu khả dụng`;
+    $("#cnt").textContent=`${sel.size} chủ đề • ${n} câu`;
+    $("#cnt2").textContent=`${sel.size}/${CH.length} chủ đề • ${n} câu`;
     $("#tl").classList.toggle("hide",mode!=="exam");
     $("#go").disabled=n===0;
   };
@@ -217,6 +257,7 @@ function home(){
     if(!this.dataset.sure){this.dataset.sure=1;this.textContent="Bấm lại để xác nhận xóa";return}
     store={wrong:{},stat:{},hist:[],n:store.n,tm:store.tm,user:store.user,outbox:store.outbox};save();home()};
   $("#go").onclick=()=>start();
+  $("#chdet").addEventListener("toggle",e=>{chOpen=e.target.open});
   if($("#logout"))$("#logout").onclick=()=>{delete store.user;save();login()};
   upd();
 }
