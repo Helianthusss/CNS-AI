@@ -70,7 +70,6 @@ footer{text-align:center;color:var(--mut);font-size:13px;padding:14px}
 <body>
 <header>
   <h1>Ôn tập trắc nghiệm – Công nghệ số và Ứng dụng AI</h1>
-  <p>Mã HP IT0.007.3 • Trường ĐH Giao thông Vận tải • Bám sát slide 11 chủ đề</p>
 </header>
 <main id="app"></main>
 <footer>Tài liệu ôn tập tham khảo, không phải đề thi chính thức. Điểm và câu sai được lưu trên trình duyệt của bạn.</footer>
@@ -175,7 +174,7 @@ function login(msg){
 function home(){
   const wrongN=Object.keys(store.wrong).filter(id=>ALL.some(q=>q.id===id)).length;
   app.innerHTML=`
-  ${store.user?`<div class="row" style="margin-bottom:10px;color:var(--mut);font-size:14px">👤 <b style="color:var(--ink)">${esc(store.user.name)}</b> • ${esc(store.user.mssv)} • ${esc(store.user.cls)}<span class="sp"></span><button class="btn gh" id="logout" style="padding:5px 10px">Đổi người</button></div>`:""}
+  ${store.user?`<div class="row" style="margin-bottom:10px;color:var(--mut);font-size:14px">👤 <b style="color:var(--ink)">${esc(store.user.name)}</b> • ${esc(store.user.mssv)} • ${esc(store.user.cls)}<span class="sp"></span><button class="btn gh" id="logout" style="padding:5px 10px">Đăng xuất</button></div>`:""}
   <div class="card">
     <h2>1. Chọn chủ đề</h2>
     <div class="row" style="margin-bottom:10px">
